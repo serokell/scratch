@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+## Run nix-build on an EPYC server on Packet
+# See iac/packet/builder for configuration instructions
+# In particular, make sure yout SSH key is in the builder config
+
+if [[ -z ${PACKET_AUTH_TOKEN:-} ]]; then
+    echo 'Please set PACKET_AUTH_TOKEN in your environment.'
+    exit 1
+fi
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+    DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPTS="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+ROOT=$(readlink -f "$SCRIPTS/..")
+
+usage() {
+cat << EOF
+Usage: nix-build-on-packet [--destroy] [--no-destroy] <nix build arguments>
+Run nix build on a remote builder on Packet
+Example: nix-build-on-packet -f https://github.com/NixOS/nixpkgs/archive/master.tar.gz hello
+
+Options
+  --no-destroy           Do not destroy the builder instance after running the build
+  --destroy              Destroy an existing builder instance
+  <nix build arguments>  Passed verbatim to nix build
+
+Environment variables
+  PACKET_AUTH_TOKEN      Your auth token from Packet
+EOF
+}
+
+destroy() {
+    pushd "$ROOT/iac/packet/builder"
+    nix-shell --run "terraform destroy -auto-approve"
+    popd
+}
+
+if [[ -z ${1:-} ]]; then
+    usage
+    exit 1
+fi
+
+while true; do
+    case "${1:-}" in
+        --no-destroy|-n)
+            NO_DESTROY=1
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit
+            ;;
+        --destroy)
+            destroy
+            exit
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+
+echo "Spinning up a c2.medium.x86 instance usually takes 10-15m. Are you sure your build is big enough?"
+read -p "Are you sure? [yN]" -n 1 -r
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo
+    echo "Alright, let's do this..."
+else
+    exit 0
+fi
+
+pushd "$ROOT/iac/packet/builder"
+if ! nix-shell --command 'terraform plan -detailed-exitcode'; then
+    nix-shell --run "terraform init && terraform apply -auto-approve && $SCRIPTS/deploy.sh"
+fi
+nix-shell --command 'terraform refresh'
+HOST=$(nix-shell --command 'terraform output ipv4_address')
+popd
+
+nix build --builders "root@$HOST" --max-jobs 48 "$@"
+
+[[ -z ${NO_DESTROY:-} ]] && destroy

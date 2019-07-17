@@ -1,6 +1,3 @@
 # Go to https://app.packet.net/ - click on your icon top right, go to API Keys, generate one, and paste it here:
 # For the love of all that is holy *do not check this into git*!
 export PACKET_AUTH_TOKEN=<your API token here>
-
-#
-export AWS_PROFILE=<your AWS credentials profile here>

@@ -4,14 +4,6 @@ provider "packet" {
   version = "~> 2.2"
 }
 
-# Configure the AWS Provider.
-# Make sure your aws credentials are set up in ~/.aws/credentials
-# Then set the profile name in .envrc
-provider "aws" {
-  version = "~> 2.2"
-  region = "eu-west-2"
-}
-
 locals {
   # Project ID: Serokell Infrastructure.
   # Note: Get UUID from CP URI.
@@ -37,24 +29,6 @@ resource "packet_device" "builder1" {
   billing_cycle    = "hourly"
   operating_system = "${data.packet_operating_system.nixos.id}"
   project_id       = "${local.project_id}"
-}
-
-# Update `builder1.serokell.org` to point to our new server
-# Note: TTL is intentionally low for convenience.
-resource "aws_route53_record" "builder1-ipv4" {
-  zone_id = "${local.hosted_zone_id}"
-  name    = "builder1"
-  type    = "A"
-  ttl     = "5"
-  records        = ["${packet_device.builder1.access_public_ipv4}"]
-}
-
-resource "aws_route53_record" "builder1-ipv6" {
-  zone_id = "${local.hosted_zone_id}"
-  name    = "builder1"
-  type    = "AAAA"
-  ttl     = "5"
-  records        = ["${packet_device.builder1.access_public_ipv6}"]
 }
 
 ## Outputs used to generate networking.nix
