@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+## Packet-compatible networking configuration nix expression generator
+#
+# Please note that different machine types ship with different configurations,
+# which is why each machine type is explicitly separated. We will add more types
+# to the list as we start using them.
+#
+# The script will print a nix expression to stdout.
+#
+# Usage:
+#     tf-gen-packet-networking.sh <type> > packet.nix
+#
+# Currently supported machine types:
+#   * c2.medium.x86
+
 if [[ ! -d .terraform ]]; then
     echo 'Could not find terraform state in current directory.'
     exit 1

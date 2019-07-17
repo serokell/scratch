@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
-SCRIPTS="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-# if [[ -z ${IN_NIX_SHELL:-} ]]; then
-#     echo 'Please run this command in nix-shell'
-#     exit 1
-# fi
+## Deployment pipeline script
+# This script is a wrapper around terraform and nixos-rebuild to deploy a
+# machine given its configuration in the current folder.
+#
+# It needs to be called FROM the folder containing this configuration. For
+# example, to deploy the temp builder, you would:
+#     $ cd iac/packet/builder
+#     $ ../../../scripts/deploy.sh
+#
+# Please note that this script will not run `terraform apply` for you. You need
+# to do that yourself first.
+
+SCRIPTS="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 if [[ ! -d .terraform ]] && [[ ! -f configuration.nix ]]; then
     echo 'Could not find terraform state or configuration.nix in current directory.'

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+## nixos-rebuild
+# NixOS ships with it, but the standalone Nix distribution does not. In the
+# meantime, we can use this.
+
 ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 nix-shell -E "with import $ROOT/../nix {}; mkShell { buildInputs = [ (nixos {}).nixos-rebuild ]; }" --run "nixos-rebuild $*"
