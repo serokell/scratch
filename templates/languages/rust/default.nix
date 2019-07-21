@@ -1,22 +1,13 @@
 { pkgs ? import ./nix {} }: with pkgs;
 let
-  rc = rustChannelOf { channel = "1.36.0"; };
-  rustPlatform = (makeRustPlatform {
-    rustc = rc.rust;
-    inherit (rc) cargo;
-  }) // { rustcSrc = "${rc.rust-src}/lib/rustlib/src/rust/src"; };
-
-  # Override rust-racer to use our Rust version, and disable tests (because they fail)
-  racer = (rustracer.override { inherit rustPlatform; })
-    .overrideAttrs (old: rec { preCheck = ""; doCheck = false; });
-
-in
-rec {
+  src = gitignoreSource ./.;
+  version = "0.1.0";
+in rec {
   thing = rustPlatform.buildRustPackage rec {
-    name = "thing${version}";
-    version = "0.1.0";
-    src = gitignoreSource ./.;
-    cargoSha256 = "0r964h4l04a3hi13gnmvg74j0x1k6akbaqyyag6fvmmb9l4fc8d9";
+    inherit src version;
+    name = "thing-${version}";
+    cargoSha256 = "0wg5absg2lk9q8lycc88kf3wfz3vz42flp1y2cl0i2xndvrsrp9n";
+    buildInputs = [ postgresql_11 zlib openssl ];
   };
 
   devshell =
@@ -24,12 +15,15 @@ rec {
       name = "thing-shell";
 
       buildInputs = [
-        rc.rust
+        rust-full
         racer
+        postgresql_11.lib
+        diesel_cli
       ];
 
       shellHook = ''
-        export RUST_SRC_PATH="${rc.rust-src}/lib/rustlib/src/rust/src"
+        export RUST_SRC_PATH="${rust-src}/lib/rustlib/src/rust/src"
+        export RUST_BACKTRACE=1
       '';
     };
 }
