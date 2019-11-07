@@ -4,13 +4,13 @@ let
   diesel-src = fetchFromGitHub {
     owner = "diesel-rs";
     repo = "diesel";
-    rev = "0b6c59e36cef3faea0184404e43e3db4739d1193";
-    sha256 = "01lx9b9m2y5rbralpdigrm8nqd72sij4ynpqf5icix7li73l3dvc";
+    rev = "066bc412d7ead423e71de811b1dac9428a63712c";
+    sha256 = "0wsd27692hzbji5zsrk11kcbrp8m2zy5yfyd35drr40fyhhpryjx";
   };
 
   lockfile = ./Cargo.lock;
   diesel_cli-src = stdenv.mkDerivation {
-    name = "diesel-src-1.4.0";
+    name = "diesel-src-1.4.3";
     src = "${diesel-src}";
     installPhase = ''
         mkdir -p $out
@@ -24,7 +24,7 @@ rustPlatform.buildRustPackage rec {
   name = "diesel_cli-${version}";
   version = "1.4.0";
   src = "${diesel_cli-src}";
-  cargoSha256 = "056gv4yaa2b0vq7b6jww0hb6jjm0hnrzvh6vss8jgk7nkndyc7ph";
+  cargoSha256 = "1qb8nn0a2n2caxcpj8r563xrqk0va8vd7iwp5f3r83q09nk201kd";
   cargoBuildFlags = [
     "--no-default-features"
     "--features" "postgres"

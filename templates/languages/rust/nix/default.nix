@@ -4,7 +4,7 @@ import sources.nixpkgs
   { overlays =
     [ (self: super:
         let
-          channel = self.rustChannelOf { channel = "1.36.0"; };
+          channel = self.rustChannelOf { channel = "1.38.0"; };
         in rec
           { niv = import sources.niv {};
             inherit (import sources.gitignore { inherit (self) lib; }) gitignoreSource;
