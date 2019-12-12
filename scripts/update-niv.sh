@@ -5,6 +5,13 @@ set -euo pipefail
 
 author="serokell-bot <operations+github@serokell.io>"
 
+# Make sure "git push" works
+export GIT_ASKPASS=`mktemp`
+
+chmod +x $GIT_ASKPASS
+
+echo 'printf "$GITHUB_TOKEN\n\n"' > $GIT_ASKPASS
+
 # Print all packages in format "package-name revision"
 pkgs() {
     jq ".[] | .repo, .rev" nix/sources.json | tr -d \" | xargs -n2 echo
