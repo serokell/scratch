@@ -58,5 +58,8 @@ after="$(pkgs)"
     # --force is so that if there is a PR already, we're still pushing to it
     git push --force --set-upstream origin automatic/update
     # Submit a PR if there isn't one already 
-    hub pr list | grep "Update dependencies \[automatic\]" || new_pr "\`\`\`$(changes "$before" "$after")\`\`\`"
+    hub pr list | grep "Update dependencies \[automatic\]" || new_pr \
+"\`\`\`
+$(changes "$before" "$after")
+\`\`\`"
 }
