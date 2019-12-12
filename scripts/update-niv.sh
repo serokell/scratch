@@ -5,6 +5,13 @@ set -euo pipefail
 
 author="serokell-bot <operations+github@serokell.io>"
 
+# Make sure "git push" works
+export GIT_ASKPASS=`mktemp`
+
+chmod +x $GIT_ASKPASS
+
+echo 'printf "$GITHUB_TOKEN\n\n"' > $GIT_ASKPASS
+
 # Print all packages in format "package-name revision"
 pkgs() {
     jq ".[] | .repo, .rev" nix/sources.json | tr -d \" | xargs -n2 echo
@@ -31,7 +38,7 @@ git checkout -B "automatic/update"
 niv init
 [ $(git diff | wc -l) -eq 0 ] || { # Commit only if there are changes
     git add nix
-    git commit --author=$author -m "Update niv's sources.nix file [automatic]"
+    git commit --author="$author" -m "Update niv's sources.nix file [automatic]"
 }
 
 before="$(pkgs)"
@@ -43,7 +50,7 @@ after="$(pkgs)"
 
 [ $(git diff | wc -l) -eq 0 ] || { # Commit only if there are changes
     git add nix
-    git commit --author=$author -m "Update dependencies with niv [automatic]" -m "$(changes "$before" "$after")"
+    git commit --author="$author" -m "Update dependencies with niv [automatic]" -m "$(changes "$before" "$after")"
 }
 
 
@@ -51,5 +58,8 @@ after="$(pkgs)"
     # --force is so that if there is a PR already, we're still pushing to it
     git push --force --set-upstream origin automatic/update
     # Submit a PR if there isn't one already 
-    hub pr list | grep "Update dependencies \[automatic\]" || new_pr "\`\`\`$(changes "$before" "$after")\`\`\`"
+    hub pr list | grep "Update dependencies \[automatic\]" || new_pr \
+"\`\`\`
+$(changes "$before" "$after")
+\`\`\`"
 }
