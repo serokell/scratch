@@ -38,7 +38,7 @@ git checkout -B "automatic/update"
 niv init
 [ $(git diff | wc -l) -eq 0 ] || { # Commit only if there are changes
     git add nix
-    git commit --author=$author -m "Update niv's sources.nix file [automatic]"
+    git commit --author="$author" -m "Update niv's sources.nix file [automatic]"
 }
 
 before="$(pkgs)"
@@ -50,7 +50,7 @@ after="$(pkgs)"
 
 [ $(git diff | wc -l) -eq 0 ] || { # Commit only if there are changes
     git add nix
-    git commit --author=$author -m "Update dependencies with niv [automatic]" -m "$(changes "$before" "$after")"
+    git commit --author="$author" -m "Update dependencies with niv [automatic]" -m "$(changes "$before" "$after")"
 }
 
 
