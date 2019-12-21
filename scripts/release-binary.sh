@@ -13,4 +13,4 @@ else
     action=create
 fi
 
-hub release $action -a release.tar.gz -m "Nightly build on $(date -I)" --draft=true --prerelease nightly
+hub release $action -a release.tar.gz -m "Nightly build on $(date -I)" --prerelease nightly
