@@ -1,9 +1,10 @@
 #!/usr/bin/env nix-shell
 #!nix-shell -p gitAndTools.hub -i bash
-nix build -f release
+project=$(basename $(pwd))
 
-cp -r result/bin .
-tar --owner=serokell:1000 -czf release.tar.gz README.md LICENSE bin/*
+nix build -f release -o $project
+
+tar --owner=serokell:1000 -czf release.tar.gz $project
 
 if hub release | grep nightly
 then
