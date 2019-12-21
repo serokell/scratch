@@ -4,7 +4,7 @@ project=$(basename $(pwd))
 
 nix build -f release -o $project
 
-tar --owner=serokell:1000 -czf release.tar.gz $project
+tar --owner=serokell:1000 -czhf release.tar.gz $project
 
 if hub release | grep nightly
 then
