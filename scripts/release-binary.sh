@@ -1,16 +1,13 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -p gitAndTools.hub -i bash
+#!nix-shell -p gitAndTools.hub git -i bash
 project=$(basename $(pwd))
 
-nix build -f release -o $project
+TEMPDIR=`mktemp -d`
 
-tar --owner=serokell:1000 -czhf release.tar.gz $project
+REV=`git rev-parse HEAD`
 
-if hub release | grep nightly
-then
-    action=edit
-else
-    action=create
-fi
+nix build -f release -o $TEMPDIR/$project
 
-hub release $action -a release.tar.gz -m "Nightly build on $(date -I)" --prerelease nightly
+tar --owner=serokell:1000 -czhf $TEMPDIR/release.tar.gz -C $TEMPDIR $project
+
+hub release create -a $TEMPDIR/release.tar.gz -m "Automatic build on $(date -I)" --prerelease auto-release
