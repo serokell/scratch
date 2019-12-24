@@ -10,6 +10,7 @@
 # 2. Run this script from CI on each commit to master.
 # 3. When you think it's time to make a real release, edit the auto release: change the tag, write a description, remove "pre-release" checkmark.
 
+set -euo pipefail
 
 # Project name, inferred from repository name
 project=$(basename $(pwd))
