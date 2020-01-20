@@ -17,6 +17,11 @@ project=$(basename $(pwd))
 
 # The directory in which tarball will be created
 TEMPDIR=`mktemp -d`
+function finish {
+  rm -rf "$TEMPDIR"
+}
+trap finish EXIT
+
 
 # Build release/default.nix
 nix-build release -o $TEMPDIR/$project
