@@ -29,10 +29,10 @@
         "homepage": "",
         "owner": "serokell",
         "repo": "nixpkgs",
-        "rev": "ae37a09824fc5d66af36da64f900532b0df5215a",
-        "sha256": "0v4cwbyhja50ksqvcdy1my0kj5033q7wxmplxk82z7k0wf4q2pwn",
+        "rev": "ac6bfb7f9d3006904f7923ebca5b108b2d6e843d",
+        "sha256": "0bwa3wwcvjiqhkvg5hc97mg0w24f2sy9p6m74c56nvkqgybb1g5b",
         "type": "tarball",
-        "url": "https://github.com/serokell/nixpkgs/archive/ae37a09824fc5d66af36da64f900532b0df5215a.tar.gz",
+        "url": "https://github.com/serokell/nixpkgs/archive/ac6bfb7f9d3006904f7923ebca5b108b2d6e843d.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
