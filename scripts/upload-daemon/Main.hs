@@ -1,18 +1,17 @@
 {-# LANGUAGE OverloadedStrings, RecordWildCards #-}
 
-module Main where
+module Main (main) where
 
-import Control.Applicative (optional)
-import Control.Concurrent.Async (async, mapConcurrently_)
-import Control.Monad (join, void)
+import Control.Monad (void, forever, forM_)
 import Control.Monad.IO.Class (liftIO)
-import Fmt (fmtLn, listF, (+|), (|+))
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Text (unpack)
-import Data.ByteString.Char8 as BS (ByteString, length, words, putStrLn)
-import Data.Maybe (fromJust, fromMaybe, isJust, listToMaybe)
+import Control.Concurrent
+import Control.Concurrent.Async (async)
+import Data.Text.Encoding (decodeUtf8)
+import Data.Text (unpack, intercalate)
+import qualified Data.Text.IO as T
+import qualified Data.ByteString.Char8 as BS
+import Data.ByteString.Char8 (ByteString)
 import Network.Simple.TCP (HostPreference(Host), SockAddr, Socket, closeSock, recv, send, serve)
-import System.Environment (getArgs, getEnv)
 import System.Exit (ExitCode(ExitSuccess))
 import System.Metrics.Prometheus.Concurrent.RegistryT (registerCounter, registerGauge, runRegistryT)
 import System.Metrics.Prometheus.Http.Scrape (serveHttpTextMetricsT)
@@ -20,6 +19,8 @@ import System.Metrics.Prometheus.Metric.Counter as C (Counter, inc)
 import System.Metrics.Prometheus.Metric.Gauge as G (Gauge, dec, inc)
 import System.Metrics.Prometheus.MetricId (addLabel, fromList)
 import System.Process (readProcessWithExitCode)
+import Options.Applicative (Parser, option, progDesc, helper, info, execParser, fullDesc, header, metavar, short, help, strOption, showDefault, value, long, auto, (<**>))
+import Data.Semigroup ((<>))
 
 data StatisticsHandlers
   = StatisticsHandlers
@@ -31,21 +32,42 @@ data StatisticsHandlers
 
 type UploadTarget = String
 
--- | First element of a list that is not Nothing
-firstJust :: [Maybe a] -> Maybe a
-firstJust = join . listToMaybe . Prelude.filter isJust
+data UploadOptions = UploadOptions
+  { port :: Int
+  , prometheusPort :: Int
+  , uploadTarget :: UploadTarget
+  , nrWorkers :: Int
+  }
 
+uploadOptions :: Parser UploadOptions
+uploadOptions = UploadOptions
+  <$> option auto
+  ( long "port"
+    <> short 'p'
+    <> metavar "PORT"
+    <> value 8080
+    <> showDefault
+    <> help "Daemon listening port" )
+  <*> option auto
+  ( long "stat-port"
+    <> short 's'
+    <> metavar "SPORT"
+    <> value 8081
+    <> showDefault
+    <> help "Prometheus listening port" )
+  <*> strOption
+  ( long "target"
+    <> short 't'
+    <> metavar "TARGET"
+    <> help "Target" )
+  <*> option auto
+  ( long "workers"
+    <> short 'j'
+    <> metavar "WORKERS"
+    <> value 2
+    <> showDefault
+    <> help "Number of nix-copies to run at the same time" )
 
--- | Upload target is taken either from first argument or from UPLOAD_TARGET env variable
-getUploadTarget :: IO (Maybe UploadTarget)
-getUploadTarget = firstJust <$> sequence
-  [ listToMaybe <$> getArgs
-  , optional $ getEnv "UPLOAD_TARGET"
-  ]
-
--- | Get an environment variable with default fallback
-getEnvDefault :: String -> String -> IO String
-getEnvDefault var def = fromMaybe def <$> (optional $ getEnv var)
 
 -- | Receive data from `sock` until EOF or connection closure
 recvAll :: Socket -> IO (Maybe ByteString)
@@ -67,38 +89,46 @@ upload target (StatisticsHandlers {..}) path = do
     ""
   G.dec running
   if code /= ExitSuccess
-    then G.inc failure >> Prelude.putStrLn stderr
-    else G.inc success >> Prelude.putStr "Uploaded " >> BS.putStrLn path
+    then G.inc failure >> putStrLn stderr
+    else G.inc success >> putStr "Uploaded " >> BS.putStrLn path
 
 
 -- | Receive space-separated paths until EOF, and upload them
-handleConnection :: UploadTarget -> StatisticsHandlers -> (Socket, SockAddr) -> IO ()
-handleConnection uploadTarget handlers@(StatisticsHandlers {..}) (sock, _) = do
+handleConnection :: UploadTarget -> Chan (UploadTarget, ByteString) -> StatisticsHandlers -> (Socket, SockAddr) -> IO ()
+handleConnection uploadTarget uploadCh (StatisticsHandlers {..}) (sock, _) = do
   C.inc requests
   Just paths <- recvAll sock -- Failure here will fail only the upload thread
   let pathsList = BS.words paths
-  fmtLn ("Uploading "+|listF (decodeUtf8 <$> pathsList)|+"")
-  send sock ("Queued "+|Prelude.length pathsList|+" paths\n")
+  T.putStrLn $ "Uploading " <> (intercalate ", " $ decodeUtf8 <$> pathsList)
+  send sock $ "Queued " <> (BS.pack . show $ Prelude.length pathsList) <> " paths\n"
   closeSock sock
-  mapConcurrently_ (upload uploadTarget handlers) pathsList
+  forM_ pathsList $ \path -> writeChan uploadCh (uploadTarget, path)
+
+uploadWorker :: StatisticsHandlers -> Chan (UploadTarget, ByteString) -> IO ()
+uploadWorker shand uploadCh = forever $ do
+  readChan uploadCh >>= (uncurry $ flip upload shand)
 
 main :: IO ()
 main = do
-  uploadTarget <- fromJust <$> liftIO getUploadTarget -- Bail out if no upload target is specified
-  port <- getEnvDefault "PORT" "8081"
-  prometheusPort <- getEnvDefault "PROMETHEUS_PORT" "8080"
-  fmtLn ("Starting server on localhost:"+|port|+" uploading to "+|uploadTarget|+"")
+  UploadOptions{..} <- execParser opts
+  putStrLn $ "Starting server on localhost:" <> show port <> " uploading to " <> uploadTarget
+  uploadCh <- newChan
   runRegistryT $ do
     uploadSuccess <- registerGauge "uploads" (fromList [("upload", "success")])
     uploadFailure <- registerGauge "uploads" (addLabel "upload" "failure" mempty)
     uploadRunning <- registerGauge "uploads" (addLabel "upload" "running" mempty)
     requestCounter <- registerCounter "requests_total" mempty
+    let shand = StatisticsHandlers requestCounter uploadSuccess uploadFailure uploadRunning
 
+    liftIO $ forM_ [1..nrWorkers] (\_ -> forkIO $ uploadWorker shand uploadCh)
 
     void $ liftIO $ async
-      $ serve (Host "127.0.0.1") (port)
-      $ handleConnection
-      uploadTarget
-      (StatisticsHandlers requestCounter uploadSuccess uploadFailure uploadRunning)
+      $ serve (Host "127.0.0.1") (show port)
+      $ handleConnection uploadTarget uploadCh shand
 
-    serveHttpTextMetricsT (read prometheusPort) [ "metrics" ]
+    serveHttpTextMetricsT prometheusPort [ "metrics" ]
+  where
+    opts = info (uploadOptions <**> helper)
+      ( fullDesc
+     <> progDesc "Listen on PORT for target paths"
+     <> header "nix-upload-daemon - keep a queue of uploading paths to a remote store" )
