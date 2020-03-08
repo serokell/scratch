@@ -49,9 +49,12 @@ let
     };
     upload-daemon = haskellPackages.callPackage ./scripts/upload-daemon {};
   };
+  plugins = {
+    simdjson = import ./nix-plugins/simdjson { inherit pkgs; };
+  };
 in
 symlinkJoin rec {
   name = "serokell-scratch";
-  passthru = { inherit scripts; };
+  passthru = { inherit scripts plugins; };
   paths = lib.collect lib.isDerivation passthru;
 }
