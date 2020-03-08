@@ -4,8 +4,8 @@ module Main (main) where
 
 import Conduit
 import Control.Concurrent
-import Control.Concurrent.Async (async)
-import Control.Monad (forM_, forever, void)
+import Control.Concurrent.Async (async, Concurrently(Concurrently), runConcurrently)
+import Control.Monad (forM_, forever, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -121,9 +121,8 @@ main :: IO ()
 main = do
   UploadOptions{..} <- execParser opts
 
-  if (port, unix) == (Nothing, Nothing)
-    then error "Specify either --port or --unix to start the server"
-    else pure ()
+
+  when ((port, unix) == (Nothing, Nothing)) $ error "Specify either --port or --unix to start the server"
 
   putStrLn $ "Starting server on "
     <> maybe "" (\p -> "localhost:" <> show p <> " ") port
@@ -131,20 +130,18 @@ main = do
     <> "uploading to " <> uploadTarget
   uploadCh <- newChan
   runRegistryT $ do
-    uploadSuccess <- registerGauge "uploads" (fromList [("upload", "success")])
-    uploadFailure <- registerGauge "uploads" (addLabel "upload" "failure" mempty)
-    uploadRunning <- registerGauge "uploads" (addLabel "upload" "running" mempty)
-    uploadQueued  <- registerGauge "uploads" (addLabel "upload" "queued" mempty)
-    requestCounter <- registerCounter "requests_total" mempty
-    let shand = StatisticsHandlers requestCounter uploadSuccess uploadFailure uploadRunning uploadQueued
-        conduit = queueUpload uploadCh shand
+    shand <- StatisticsHandlers
+      <$> registerCounter "requests_total" mempty
+      <*> registerGauge "uploads" (fromList [("upload", "success")])
+      <*> registerGauge "uploads" (addLabel "upload" "failure" mempty)
+      <*> registerGauge "uploads" (addLabel "upload" "running" mempty)
+      <*> registerGauge "uploads" (addLabel "upload" "queued" mempty)
+    let conduit = queueUpload uploadCh shand
 
-    liftIO $ mconcat . replicate nrWorkers
-      $ void $ forkIO $ uploadWorker uploadTarget shand uploadCh
-
-    void $ liftIO $
-      async (forM_ port $ \p -> runTCPServer (TCP.serverSettings p "*") $ handleConnection conduit) >>
-      async (forM_ unix $ \u -> runUnixServer (UNIX.serverSettings u) $ handleConnection conduit)
+    void $ liftIO $ async $ runConcurrently
+      $ Concurrently (forM_ port $ \p -> runTCPServer (TCP.serverSettings p "*") $ handleConnection conduit)
+      <>Concurrently (forM_ unix $ \u -> runUnixServer (UNIX.serverSettings u) $ handleConnection conduit)
+      <>(mconcat . replicate nrWorkers $ Concurrently $ uploadWorker uploadTarget shand uploadCh)
 
     serveHttpTextMetricsT prometheusPort [ "metrics" ]
   where
