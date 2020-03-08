@@ -51,6 +51,7 @@ let
   };
   plugins = {
     simdjson = import ./nix-plugins/simdjson { inherit pkgs; };
+    importzip = import ./nix-plugins/importzip { inherit pkgs; };
   };
 in
 symlinkJoin rec {
