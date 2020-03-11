@@ -2,16 +2,23 @@
 
 module Main (main) where
 
-import Control.Monad (void, forever, forM_)
-import Control.Monad.IO.Class (liftIO)
+import Conduit
 import Control.Concurrent
-import Control.Concurrent.Async (async)
-import Data.Text.Encoding (decodeUtf8)
-import Data.Text (unpack, intercalate)
-import qualified Data.Text.IO as T
-import qualified Data.ByteString.Char8 as BS
+import Control.Concurrent.Async (async, Concurrently(Concurrently), runConcurrently)
+import Control.Monad (forM_, forever, void, when)
+import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 (ByteString)
-import Network.Simple.TCP (HostPreference(Host), SockAddr, Socket, closeSock, recv, send, serve)
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.Conduit.List as CL
+import Data.Conduit.Network as TCP
+import Data.Conduit.Network.Unix as UNIX
+import Data.Semigroup ((<>))
+import Data.Streaming.Network (HasReadWrite)
+import Data.Text (unpack)
+import Data.Text.Encoding (decodeUtf8)
+import Options.Applicative
+  (Parser, auto, execParser, fullDesc, header, help, helper, info, long, metavar, option, optional,
+  progDesc, short, showDefault, strOption, value, (<**>))
 import System.Exit (ExitCode(ExitSuccess))
 import System.Metrics.Prometheus.Concurrent.RegistryT (registerCounter, registerGauge, runRegistryT)
 import System.Metrics.Prometheus.Http.Scrape (serveHttpTextMetricsT)
@@ -19,8 +26,6 @@ import System.Metrics.Prometheus.Metric.Counter as C (Counter, inc)
 import System.Metrics.Prometheus.Metric.Gauge as G (Gauge, dec, inc)
 import System.Metrics.Prometheus.MetricId (addLabel, fromList)
 import System.Process (readProcessWithExitCode)
-import Options.Applicative (Parser, option, progDesc, helper, info, execParser, fullDesc, header, metavar, short, help, strOption, showDefault, value, long, auto, (<**>))
-import Data.Semigroup ((<>))
 
 data StatisticsHandlers
   = StatisticsHandlers
@@ -28,12 +33,14 @@ data StatisticsHandlers
   , success  :: Gauge
   , failure  :: Gauge
   , running  :: Gauge
+  , queued   :: Gauge
   }
 
 type UploadTarget = String
 
 data UploadOptions = UploadOptions
-  { port :: Int
+  { port :: Maybe Int
+  , unix :: Maybe FilePath
   , prometheusPort :: Int
   , uploadTarget :: UploadTarget
   , nrWorkers :: Int
@@ -41,13 +48,18 @@ data UploadOptions = UploadOptions
 
 uploadOptions :: Parser UploadOptions
 uploadOptions = UploadOptions
-  <$> option auto
-  ( long "port"
+  <$> optional
+  ( option auto
+    ( long "port"
     <> short 'p'
     <> metavar "PORT"
-    <> value 8080
-    <> showDefault
-    <> help "Daemon listening port" )
+    <> help "TCP port to listen on" ) )
+  <*> optional
+  ( strOption
+  ( long "unix"
+    <> short 'u'
+    <> metavar "UNIX"
+    <> help "UNIX Domain Socket to listen on" ) )
   <*> option auto
   ( long "stat-port"
     <> short 's'
@@ -59,7 +71,7 @@ uploadOptions = UploadOptions
   ( long "target"
     <> short 't'
     <> metavar "TARGET"
-    <> help "Target" )
+    <> help "Where to upload" )
   <*> option auto
   ( long "workers"
     <> short 'j'
@@ -69,23 +81,13 @@ uploadOptions = UploadOptions
     <> help "Number of nix-copies to run at the same time" )
 
 
--- | Receive data from `sock` until EOF or connection closure
-recvAll :: Socket -> IO (Maybe ByteString)
-recvAll sock = do
-  dat <- recv sock 1024
-  case dat of
-    Just str ->
-      if BS.length str == 1024
-      then (\rest -> dat <> rest) <$> recvAll sock
-      else return dat
-    Nothing -> return Nothing
-
 -- | Upload a path to target binary cache
 upload :: UploadTarget -> StatisticsHandlers -> ByteString -> IO ()
-upload target (StatisticsHandlers {..}) path = do
+upload target StatisticsHandlers {..} path = do
+  G.dec queued
   G.inc running
   (code, _, stderr) <- readProcessWithExitCode "nix"
-    [ "copy", "--to", target, (unpack $ decodeUtf8 path) ]
+    [ "copy", "--to", target, unpack $ decodeUtf8 path ]
     ""
   G.dec running
   if code /= ExitSuccess
@@ -93,42 +95,57 @@ upload target (StatisticsHandlers {..}) path = do
     else G.inc success >> putStr "Uploaded " >> BS.putStrLn path
 
 
--- | Receive space-separated paths until EOF, and upload them
-handleConnection :: UploadTarget -> Chan (UploadTarget, ByteString) -> StatisticsHandlers -> (Socket, SockAddr) -> IO ()
-handleConnection uploadTarget uploadCh (StatisticsHandlers {..}) (sock, _) = do
-  C.inc requests
-  Just paths <- recvAll sock -- Failure here will fail only the upload thread
-  let pathsList = BS.words paths
-  T.putStrLn $ "Uploading " <> (intercalate ", " $ decodeUtf8 <$> pathsList)
-  send sock $ "Queued " <> (BS.pack . show $ Prelude.length pathsList) <> " paths\n"
-  closeSock sock
-  forM_ pathsList $ \path -> writeChan uploadCh (uploadTarget, path)
+uploadWorker :: UploadTarget -> StatisticsHandlers -> Chan ByteString -> IO ()
+uploadWorker target shand uploadCh = forever $
+  readChan uploadCh >>= upload target shand
 
-uploadWorker :: StatisticsHandlers -> Chan (UploadTarget, ByteString) -> IO ()
-uploadWorker shand uploadCh = forever $ do
-  readChan uploadCh >>= (uncurry $ flip upload shand)
+response :: [ByteString] -> BS.ByteString
+response paths = BS.pack $ "Queued " <> show (length paths) <> " paths"
+
+logUploading :: ConduitT BS.ByteString Void IO ()
+logUploading = CL.mapM_ $ \paths -> BS.putStrLn $ "Queued " <> paths
+
+queueUpload :: Chan ByteString -> StatisticsHandlers -> ConduitT BS.ByteString BS.ByteString IO ()
+queueUpload uploadCh StatisticsHandlers {..} =
+    passthroughSink logUploading return
+    .| passthroughSink (CL.mapM_ $ const $ C.inc requests) return
+    .| CL.map BS.words
+    .| passthroughSink (CL.mapM_ . mapM_ $ const $ G.inc queued) return
+    .| passthroughSink (CL.mapM_ . mapM_ $ writeChan uploadCh) return
+    .| CL.map response
+
+handleConnection :: (HasReadWrite ad) => ConduitT BS.ByteString BS.ByteString IO () -> ad -> IO ()
+handleConnection conduit appData = runConduit $ appSource appData .| conduit .| appSink appData
 
 main :: IO ()
 main = do
   UploadOptions{..} <- execParser opts
-  putStrLn $ "Starting server on localhost:" <> show port <> " uploading to " <> uploadTarget
+
+
+  when ((port, unix) == (Nothing, Nothing)) $ error "Specify either --port or --unix to start the server"
+
+  putStrLn $ "Starting server on "
+    <> maybe "" (\p -> "localhost:" <> show p <> " ") port
+    <> maybe "" (show <> const " ") unix
+    <> "uploading to " <> uploadTarget
   uploadCh <- newChan
   runRegistryT $ do
-    uploadSuccess <- registerGauge "uploads" (fromList [("upload", "success")])
-    uploadFailure <- registerGauge "uploads" (addLabel "upload" "failure" mempty)
-    uploadRunning <- registerGauge "uploads" (addLabel "upload" "running" mempty)
-    requestCounter <- registerCounter "requests_total" mempty
-    let shand = StatisticsHandlers requestCounter uploadSuccess uploadFailure uploadRunning
+    shand <- StatisticsHandlers
+      <$> registerCounter "requests_total" mempty
+      <*> registerGauge "uploads" (fromList [("upload", "success")])
+      <*> registerGauge "uploads" (addLabel "upload" "failure" mempty)
+      <*> registerGauge "uploads" (addLabel "upload" "running" mempty)
+      <*> registerGauge "uploads" (addLabel "upload" "queued" mempty)
+    let conduit = queueUpload uploadCh shand
 
-    liftIO $ forM_ [1..nrWorkers] (\_ -> forkIO $ uploadWorker shand uploadCh)
-
-    void $ liftIO $ async
-      $ serve (Host "127.0.0.1") (show port)
-      $ handleConnection uploadTarget uploadCh shand
+    void $ liftIO $ async $ runConcurrently
+      $ Concurrently (forM_ port $ \p -> runTCPServer (TCP.serverSettings p "*") $ handleConnection conduit)
+      <>Concurrently (forM_ unix $ \u -> runUnixServer (UNIX.serverSettings u) $ handleConnection conduit)
+      <>(mconcat . replicate nrWorkers $ Concurrently $ uploadWorker uploadTarget shand uploadCh)
 
     serveHttpTextMetricsT prometheusPort [ "metrics" ]
   where
     opts = info (uploadOptions <**> helper)
       ( fullDesc
-     <> progDesc "Listen on PORT for target paths"
+     <> progDesc "Listen on PORT and/or UNIX for paths to be uploaded to TARGET"
      <> header "nix-upload-daemon - keep a queue of uploading paths to a remote store" )
