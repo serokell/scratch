@@ -7,4 +7,4 @@ let
   };
   nixpkgs = builtins.mapAttrs (name: value: import value hs-nix) nixpkgs-src;
 in
-nixpkgs.serokell.lib.recurseIntoAttrs (builtins.mapAttrs (name: value: value.haskell-nix.haskellNixRoots) nixpkgs)
+nixpkgs.serokell.recurseIntoAttrs (builtins.mapAttrs (name: value: value.haskell-nix.haskellNixRoots) nixpkgs)
