@@ -1,0 +1,6 @@
+Host test.vm
+  Hostname 192.168.100.161
+  IdentityFile ./out/id_rsa
+  User root
+  StrictHostKeyChecking false
+  UserKnownHostsFile /dev/null
