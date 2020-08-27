@@ -21,7 +21,7 @@ import Options.Applicative
   progDesc, short, showDefault, strOption, value, (<**>))
 import System.Exit (ExitCode(ExitSuccess))
 import System.Metrics.Prometheus.Concurrent.RegistryT (registerCounter, registerGauge, runRegistryT)
-import System.Metrics.Prometheus.Http.Scrape (serveHttpTextMetricsT)
+import System.Metrics.Prometheus.Http.Scrape (serveMetricsT)
 import System.Metrics.Prometheus.Metric.Counter as C (Counter, inc)
 import System.Metrics.Prometheus.Metric.Gauge as G (Gauge, dec, inc)
 import System.Metrics.Prometheus.MetricId (addLabel, fromList)
@@ -143,7 +143,7 @@ main = do
       <>Concurrently (forM_ unix $ \u -> runUnixServer (UNIX.serverSettings u) $ handleConnection conduit)
       <>(mconcat . replicate nrWorkers $ Concurrently $ uploadWorker uploadTarget shand uploadCh)
 
-    serveHttpTextMetricsT prometheusPort [ "metrics" ]
+    serveMetricsT prometheusPort [ "metrics" ]
   where
     opts = info (uploadOptions <**> helper)
       ( fullDesc
