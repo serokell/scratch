@@ -1,0 +1,27 @@
+{
+  "nodes": {
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1598385881,
+        "narHash": "sha256-kBvSrVo9NrWlQEvMtjEx/TCEDQTAG1M8pxhyxj0PSyU=",
+        "owner": "serokell",
+        "repo": "nixpkgs",
+        "rev": "66a26e65eb7f9b6cb3f773052da0cd3ac52f015c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "serokell",
+        "ref": "master-repin",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
