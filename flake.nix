@@ -1,5 +1,5 @@
 {
-  inputs.nixpkgs.url = "github:serokell/nixpkgs/master-repin";
+  inputs.nixpkgs.url = "github:serokell/nixpkgs/master";
 
   outputs = { self, nixpkgs }: {
     overlay = final: prev:

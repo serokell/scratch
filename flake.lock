@@ -11,7 +11,7 @@
       },
       "original": {
         "owner": "serokell",
-        "ref": "master-repin",
+        "ref": "master",
         "repo": "nixpkgs",
         "type": "github"
       }
