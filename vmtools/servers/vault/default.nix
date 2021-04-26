@@ -1,9 +1,7 @@
 { config, lib, pkgs, ... }:
 
-# example of a nixos config
 {
-  networking.firewall.enable = false;
-  networking.firewall.allowPing = true;
+  networking.hostName = "test2";
 
   # runs vault on port 8200
   services.vault = {
