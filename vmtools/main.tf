@@ -51,6 +51,11 @@ resource "libvirt_domain" "nixos_vm" {
   network_interface {
     network_name = "default"
   }
+  console {
+    type = "pty"
+    target_type = "virtio"
+    target_port = "0"
+  }
 }
 
 resource "libvirt_domain" "ubuntu_vm" {
@@ -63,6 +68,11 @@ resource "libvirt_domain" "ubuntu_vm" {
   }
   network_interface {
     network_name = "default"
+  }
+  console {
+    type = "pty"
+    target_type = "virtio"
+    target_port = "0"
   }
   cloudinit = libvirt_cloudinit_disk.cloud_init_ubuntu.id
 }

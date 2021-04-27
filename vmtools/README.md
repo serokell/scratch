@@ -29,7 +29,8 @@ $ make apply
 # To get IP addresses you can use `virsh domifaddr <machine-name>`
 # or `virsh net-dhcp-leases <network-name>`
 # For NixOS the username is "root", for Ubuntu the username is "ubuntu" and the password is "1".
-# You can also access tty for the VMs via virt-manager.
+# You can also access tty for the VMs via virt-manager or with `virsh console`:
+$ virsh console <machine-name>
 ```
 
 ### Deploying NixOS systems
