@@ -1,5 +1,4 @@
-#!/usr/bin/env nix-shell
-#!nix-shell -p gitAndTools.hub git -i bash
+#!/usr/bin/env bash
 
 # Suggested usage:
 # 1. Make sure your repository has `release/default.nix` that produces whatever you want to release.
@@ -15,6 +14,7 @@ project=$(basename "$(pwd)")
 TEMPDIR=$(mktemp -d)
 function finish {
     rm -rf "$TEMPDIR"
+    gh auth logout
 }
 trap finish EXIT
 
@@ -27,8 +27,11 @@ mkdir -p "$assets_dir"
 shopt -s extglob
 cp -L "$TEMPDIR"/"$project"/!(*.md) "$assets_dir"
 
+# Auth, expects 'GH_TOKEN' env variable to be set
+gh auth login
+
 # Delete release if it exists
-hub release delete auto-release || true
+gh release delete auto-release || true
 
 # Update the tag
 git fetch # So that the script can be run from an arbitrary checkout
@@ -43,4 +46,7 @@ for file in $assets_dir/*; do
 done
 
 # Create release
-hub release create "${assets[@]}" -F "$TEMPDIR"/"$project"/release-notes.md --prerelease auto-release
+gh release create auto-release --title auto-release --prerelease -F "$TEMPDIR"/"$project"/release-notes.md
+
+# Upload artifacts
+gh release upload auto-release "$assets_dir"/*

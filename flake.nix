@@ -43,7 +43,7 @@
             };
             release-binary = installWrapped {
               src = ./scripts/release-binary.sh;
-              buildInputs = [ gitAndTools.hub git ];
+              buildInputs = [ gh git nix ];
             };
             update-stack-shas = installWrapped {
               src = ./scripts/update-stack-shas.py;
